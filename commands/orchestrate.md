@@ -383,13 +383,11 @@ git push -u origin <branch>
 
 On **Create PR** (or `--pr` flag):
 ```bash
-gh pr create \
-  --title "<task>" \
-  --body "$(cat .claude/runs/<branch-slug>.md)" \
-  --base <base>
+sap-pr --base <base>
+# If running from outside the git root, add: --repo <path-to-git-root>
 ```
 
-Note: the PR body is auto-populated from the audit trail — tool stack, phases, commits, metrics all included.
+Note: `sap-pr` creates the PR via `gh` and automatically pre-fills the body with AI provenance (session prompts, files changed). The audit trail is already committed to `.claude/runs/` and will appear in the diff.
 
 **Mark Phase 5 complete.** Print:
 ```
