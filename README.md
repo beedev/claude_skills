@@ -9,6 +9,8 @@ Built around the **Bharath persona** — craftsman-engineer standards, approval 
 | Skill | Description |
 |-------|-------------|
 | `/orchestrate` | Full development lifecycle orchestrator — Plan → Craft → Test → Review → Ship |
+| `/mcp:build` | Scaffold a production-ready custom MCP server from a plain-English description |
+| `/mcp:setup` | Add, configure, and validate MCP servers in Claude settings (user or project scope) |
 | `/sc:implement` | Feature implementation with intelligent persona activation |
 | `/sc:analyze` | Code quality, security, performance, and architecture analysis |
 | `/sc:improve` | Systematic improvements with evidence-based recommendations |
@@ -29,6 +31,29 @@ Built around the **Bharath persona** — craftsman-engineer standards, approval 
 | `/sc:index` | Generate comprehensive project documentation |
 | `/sc:project-briefing` | Engaging project briefing in plain language |
 | `/sc:code-analyzer` | Analyze code changes against requirements |
+
+## MCP Skills
+
+```bash
+# Build a custom MCP server
+/mcp:build "tools to query our internal REST API and cache in Redis" --name my-api --lang ts
+/mcp:build "read/write Notion pages and databases" --lang py --setup
+
+# Wire up well-known servers (10 in catalog)
+/mcp:setup playwright
+/mcp:setup postgres --env DATABASE_URL=postgresql://localhost/mydb
+/mcp:setup github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx
+/mcp:setup brave-search
+
+# Project-scoped (shared with team via git)
+/mcp:setup playwright --scope project
+
+# Wire up a server you just built
+/mcp:setup my-api --path ./mcp-servers/my-api
+
+# Remove
+/mcp:setup playwright --remove
+```
 
 ## Install
 
