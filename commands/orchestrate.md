@@ -31,9 +31,10 @@ Scan the task description for signals:
 |---|---|
 | architecture, redesign, system, complex, refactor, migration | `ultrathink` + `seq` |
 | library, framework, SDK, integration, dependency, docs | `c7` + `seq` |
-| UI, component, design, layout, frontend, screen, visual | `stitch` + `magic` |
+| UI, component, design, layout, frontend, screen, visual, figma | `paper` + `figma` + `stitch` + `magic` |
 | e2e, browser, visual regression, playwright, screenshot | `playwright` |
 | debug, investigate, trace, root cause, performance | `think-hard` + `seq` |
+| security, auth, secrets, credentials, OWASP, vulnerability | `think-hard` + `seq` |
 | All non-trivial tasks | `seq` (always baseline) |
 
 ### Tool reference
@@ -43,9 +44,11 @@ Scan the task description for signals:
 | Sequential (deep analysis) | `--seq` | Complex multi-step reasoning, always-on baseline |
 | Ultrathink | `--ultrathink` | Architecture decisions, critical redesigns |
 | Context7 | `--c7` | External library docs, framework patterns |
-| Stitch | `--stitch` | UI design generation, screen mockups |
-| Magic | `--magic` | UI component generation |
+| Paper | `--paper` | Live UI design canvas — design in Paper before coding; preferred over stitch/magic for UI tasks |
+| Stitch | `--stitch` | UI design generation, screen mockups (fallback when Paper not running) |
+| Magic | `--magic` | UI component generation (fallback when Paper not running) |
 | Playwright | `--playwright` | E2E tests, browser automation, visual testing |
+| Figma | `--figma` | Import designs from Figma, design-to-code workflows, component mapping |
 | Think-hard | `--think-hard` | Deep debugging, bottleneck analysis |
 
 ### Output: `<tool-stack>`
@@ -71,8 +74,9 @@ TodoWrite([
   "Phase 1 — Ultrathink & Plan",
   "Phase 2 — Craft",
   "Phase 3 — Prove It Works",
-  "Phase 4 — Leave It Better",
-  "Phase 5 — Ship"
+  "Phase 4 — Security Scan",
+  "Phase 5 — Leave It Better",
+  "Phase 6 — Ship"
 ])
 ```
 
@@ -123,6 +127,7 @@ Tool inventory (required section):
 
 Use <TOOL_STACK> tools actively during analysis:
 - If c7 in stack: look up relevant library docs via Context7
+- If figma in stack: pull design context and screenshots from Figma files for UI planning
 - If seq in stack: apply sequential reasoning for multi-step analysis
 - If ultrathink in stack: go deep on architectural implications
 
@@ -164,8 +169,10 @@ Implement this approved plan with craftsmanship:
 Active tool stack: <TOOL_STACK>
 Tool instructions:
 - If c7 in stack: use Context7 (resolve-library-id → get-library-docs) before implementing any external library usage
-- If stitch in stack: use Stitch to generate UI screens/components before hand-coding them
-- If magic in stack: use Magic for UI component generation
+- If figma in stack: use Figma MCP (get_design_context → get_screenshot) to pull design specs and implement with 1:1 fidelity. Adapt output to project stack/components.
+- If paper in stack: design in Paper BEFORE writing code — get_basic_info → get_selection → write_html iteratively (one visual group per call) → get_screenshot after every 2-3 changes → finish_working_on_nodes when done. Then implement from the Paper design.
+- If stitch in stack (and paper/figma not in stack): use Stitch to generate UI screens/components before hand-coding them
+- If magic in stack (and paper/figma not in stack): use Magic for UI component generation
 - If playwright in stack: write Playwright tests alongside implementation
 - seq is always active: use Sequential for complex reasoning steps
 
@@ -236,9 +243,120 @@ Re-run tests. **Maximum 3 fix cycles.** If still failing: stop, surface the fail
 
 ---
 
-### 4 · Leave It Better
+### 4 · Security Scan
 
 **Mark Phase 4 in_progress.**
+
+Get the diff against base:
+```bash
+git diff <base>...HEAD
+```
+
+Spawn a Security Scan agent — subagent_type: `general-purpose`:
+
+```
+You are a security engineer. Scan this diff for vulnerabilities.
+
+Task context: <task>
+Diff:
+<diff>
+
+Active tool stack: <TOOL_STACK>
+- Use seq for systematic analysis of each vulnerability category
+- Use c7 to verify secure usage patterns for any libraries
+
+## Scan Categories (OWASP Top 10 + Secrets)
+
+1. **Injection** — SQL injection, NoSQL injection, command injection, LDAP injection
+2. **Broken Authentication** — hardcoded credentials, weak session handling, missing auth checks
+3. **Sensitive Data Exposure** — API keys, tokens, passwords, PII in logs, missing encryption
+4. **XXE** — unsafe XML parsing, external entity processing
+5. **Broken Access Control** — missing authorization, IDOR, privilege escalation paths
+6. **Security Misconfiguration** — debug mode, default credentials, overly permissive CORS/headers
+7. **XSS** — reflected, stored, DOM-based cross-site scripting
+8. **Insecure Deserialization** — untrusted data deserialization, prototype pollution
+9. **Known Vulnerabilities** — outdated dependencies with CVEs (check package files in diff)
+10. **Insufficient Logging** — security events not logged, sensitive data in logs
+11. **Secrets Detection** — API keys, tokens, passwords, private keys, connection strings in code or config
+
+## Scan Rules
+
+- Only scan code in the diff — not the entire codebase
+- For each finding, report: Category, Severity (CRITICAL/HIGH/MEDIUM/LOW), File:Line, Description, Fix recommendation
+- Classify as AUTO_FIX (safe to fix automatically) or MANUAL_REVIEW (needs human judgment)
+- AUTO_FIX criteria: the fix is mechanical, isolated, and cannot change behavior beyond the security improvement (e.g., parameterizing a query, removing a hardcoded secret, adding input sanitization)
+- MANUAL_REVIEW criteria: fix requires architectural decision, changes business logic, or has unclear scope
+
+## Output Format
+
+Return a structured report:
+SCAN_RESULT: CLEAN | FINDINGS
+
+If FINDINGS:
+### Auto-Fixable
+- [SEVERITY] Category — file:line — description — proposed fix
+
+### Manual Review Required
+- [SEVERITY] Category — file:line — description — why manual
+
+### Summary
+- Total findings: N
+- Auto-fixable: N
+- Manual review: N
+- Critical/High count: N
+```
+
+**If CLEAN** — mark Phase 4 complete, proceed.
+
+**If FINDINGS with auto-fixable issues:**
+
+Spawn a Security Fix agent — subagent_type: `general-purpose`:
+
+```
+Apply these security fixes to the codebase:
+
+<auto-fixable findings list>
+
+Rules:
+- One fix per finding — minimal, targeted changes
+- Read each file before editing
+- Do not refactor or change unrelated code
+- Each fix must address exactly the vulnerability described
+- Add a brief inline comment only for non-obvious security fixes
+```
+
+Commit:
+```bash
+git add -A && git commit -m "orchestrator(security): fix <N> auto-detected vulnerabilities"
+```
+
+Re-run the security scan on the new diff to confirm fixes landed. Maximum 2 fix cycles.
+
+**If MANUAL_REVIEW findings remain with CRITICAL or HIGH severity:**
+
+Hard gate — present findings to user via AskUserQuestion:
+```
+Security scan found <N> issue(s) requiring manual review:
+
+<findings list>
+
+These CRITICAL/HIGH issues must be resolved before shipping.
+```
+> Options: Fix now (pause orchestration) / Acknowledge risk and continue / Abort
+
+If "Fix now": user fixes manually or provides guidance, then re-scan.
+If "Acknowledge risk": document acknowledged risks in audit trail, proceed.
+If "Abort": stop orchestration.
+
+MEDIUM/LOW manual findings are documented in the audit trail but don't block.
+
+**Mark Phase 4 complete.**
+
+---
+
+### 5 · Leave It Better
+
+**Mark Phase 5 in_progress.**
 
 Get the full diff:
 ```bash
@@ -258,7 +376,7 @@ Active tool stack: <TOOL_STACK>
 
 Assess:
 - Correctness and edge cases
-- Security implications
+- Security (defer to Phase 4 scan — flag only NEW concerns not in scan scope)
 - Error handling completeness
 - Convention and style consistency
 - Test coverage adequacy
@@ -292,11 +410,11 @@ Format: clean markdown table per category. Append to existing file if it exists,
 Commit message: orchestrator(docs): tool usage for <task-slug>
 ```
 
-**Mark Phase 4 complete.**
+**Mark Phase 5 complete.**
 
 ---
 
-### 5 · Ship
+### 6 · Ship
 
 **Gather run metrics:**
 
@@ -331,8 +449,14 @@ cat > .claude/runs/<branch-slug>.md << EOF
 - Phase 1 — Plan: ✅ SRC validated, approved
 - Phase 2 — Craft: ✅ <commit count> commits
 - Phase 3 — Test: ✅ (or: ⚠️ <N> fix cycles needed)
-- Phase 4 — Review: ✅ <APPROVED / APPROVED_WITH_NOTES>
-- Phase 5 — Ship: ✅
+- Phase 4 — Security: ✅ CLEAN (or: <N> fixed, <N> acknowledged)
+- Phase 5 — Review: ✅ <APPROVED / APPROVED_WITH_NOTES>
+- Phase 6 — Ship: ✅
+
+## Security Scan
+- Result: CLEAN | <N> findings fixed, <N> acknowledged
+- Auto-fixed: <list or "none">
+- Acknowledged risks: <list or "none">
 
 ## Commits
 <git log output>
@@ -363,8 +487,11 @@ git add .claude/runs/ && git commit -m "orchestrator(audit): run trail for <task
   🔧 Tool Stack
   <TOOL_STACK> — <TOOL_RATIONALE>
 
+  🛡️ Security
+  <CLEAN or: N fixed, N acknowledged>
+
   📊 Run Summary
-  Agents spawned:  4–6
+  Agents spawned:  5–8
   MCPs used:       <from TOOL_STACK>
   Files modified:  <count>
   Commits:         <COMMIT_COUNT>
@@ -389,7 +516,7 @@ sap-pr --base <base>
 
 Note: `sap-pr` creates the PR via `gh` and automatically pre-fills the body with AI provenance (session prompts, files changed). The audit trail is already committed to `.claude/runs/` and will appear in the diff.
 
-**Mark Phase 5 complete.** Print:
+**Mark Phase 6 complete.** Print:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✅ Orchestration complete
@@ -413,7 +540,8 @@ These apply at every phase without exception:
 | SRC ≥95% before approval gate | Prevents gaps that surface in production |
 | Read before edit — always | Understand before you touch |
 | Pass tool stack to every agent | Consistent tooling across the run |
-| Tests must pass before Phase 5 | Never ship broken code |
+| Tests must pass before Phase 6 | Never ship broken code |
+| Security scan before review — always | Vulnerabilities caught early cost 10x less to fix |
 | Root cause, not symptoms | Quick fixes compound into debt |
 | Document tool usage before shipping | Future devs need to know the integration surface |
 | If something goes sideways — stop and re-plan | Don't push through confusion |
