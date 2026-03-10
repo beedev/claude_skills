@@ -31,6 +31,7 @@ Scan the task description for signals:
 |---|---|
 | architecture, redesign, system, complex, refactor, migration | `ultrathink` + `seq` |
 | library, framework, SDK, integration, dependency, docs | `c7` + `seq` |
+| API, external service, webhook, OAuth, payment, REST endpoint, provider | `chub` + `c7` + `seq` |
 | UI, component, design, layout, frontend, screen, visual, figma | `paper` + `figma` + `stitch` + `magic` |
 | e2e, browser, visual regression, playwright, screenshot | `playwright` |
 | debug, investigate, trace, root cause, performance | `think-hard` + `seq` |
@@ -44,6 +45,7 @@ Scan the task description for signals:
 | Sequential (deep analysis) | `--seq` | Complex multi-step reasoning, always-on baseline |
 | Ultrathink | `--ultrathink` | Architecture decisions, critical redesigns |
 | Context7 | `--c7` | External library docs, framework patterns |
+| Chub | `--chub` | External API provider docs — authoritative request/response shapes, auth headers, error codes |
 | Paper | `--paper` | Live UI design canvas — design in Paper before coding; preferred over stitch/magic for UI tasks |
 | Stitch | `--stitch` | UI design generation, screen mockups (fallback when Paper not running) |
 | Magic | `--magic` | UI component generation (fallback when Paper not running) |
@@ -127,6 +129,7 @@ Tool inventory (required section):
 
 Use <TOOL_STACK> tools actively during analysis:
 - If c7 in stack: look up relevant library docs via Context7
+- If chub in stack: identify all external APIs/providers in the task; run `chub search <term>` to find docs, then `chub get <provider>/<api> --lang <lang>` to fetch them; summarize key patterns (auth, request shape, error codes) before planning the integration
 - If figma in stack: pull design context and screenshots from Figma files for UI planning
 - If seq in stack: apply sequential reasoning for multi-step analysis
 - If ultrathink in stack: go deep on architectural implications
@@ -169,6 +172,7 @@ Implement this approved plan with craftsmanship:
 Active tool stack: <TOOL_STACK>
 Tool instructions:
 - If c7 in stack: use Context7 (resolve-library-id → get-library-docs) before implementing any external library usage
+- If chub in stack: run `chub get <provider>/<api> --lang <lang>` before implementing any external API call — use the returned doc as the authoritative reference for request/response shapes, auth headers, and error codes. Run `chub search <term>` first if unsure of the exact ID.
 - If figma in stack: use Figma MCP (get_design_context → get_screenshot) to pull design specs and implement with 1:1 fidelity. Adapt output to project stack/components.
 - If paper in stack: design in Paper BEFORE writing code — get_basic_info → get_selection → write_html iteratively (one visual group per call) → get_screenshot after every 2-3 changes → finish_working_on_nodes when done. Then implement from the Paper design.
 - If stitch in stack (and paper/figma not in stack): use Stitch to generate UI screens/components before hand-coding them
@@ -224,6 +228,7 @@ Root cause analysis and fix for these failures:
 
 Active tool stack: <TOOL_STACK>
 - Use c7 if the failure relates to library API usage
+- Use chub if the failure relates to an external API call (wrong endpoint, wrong request shape, wrong auth header)
 - Use seq for systematic root cause tracing
 
 Rules:
@@ -373,6 +378,7 @@ Review this diff with a senior engineer's eye. Task: <task>
 Active tool stack: <TOOL_STACK>
 - Use seq for deep correctness and security analysis
 - Use c7 to verify library usage matches official patterns
+- Use chub to verify external API usage matches current provider docs (`chub get <provider>/<api> --lang <lang>`)
 
 Assess:
 - Correctness and edge cases
@@ -546,6 +552,7 @@ These apply at every phase without exception:
 | Document tool usage before shipping | Future devs need to know the integration surface |
 | If something goes sideways — stop and re-plan | Don't push through confusion |
 | Minimal scope — agents touch only what the plan specifies | Prevent accidental regressions |
+| Use chub before any external API integration | Wrong request shape or auth header silently breaks in production |
 | The codebase must be better than you found it | Leave a dent |
 
 ---

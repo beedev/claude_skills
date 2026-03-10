@@ -55,6 +55,16 @@ Built around the **Bharath persona** — craftsman-engineer standards, approval 
 /mcp:setup playwright --remove
 ```
 
+## Dependencies
+
+Some skills use external CLI tools. Install what you need:
+
+```bash
+# chub — fetches live API docs for external providers (OpenAI, Anthropic, Stripe, etc.)
+# Used by /orchestrate and /migrate before any external API integration
+npm install -g @aisuite/chub
+```
+
 ## Install
 
 ### Option A — One-liner (single skill)
