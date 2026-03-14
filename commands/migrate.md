@@ -71,6 +71,18 @@ After gathering, extract from `codeloom_get_import_graph` result:
   Examples: `utils.ts`, `types.ts`, `constants.ts`, `helpers.ts` at module roots.
 - **`import_edges`**: used in Step 5.5 to verify every file is covered.
 
+7. **Check existing asset strategies**: If the most recent plan has `asset_strategies`:
+   - Extract per-language strategies (especially JCL sub-type classifications)
+   - Log: "Asset strategies found: {summary of strategies per language}"
+   - These are the user's confirmed classifications — MUST be honored in Step 5
+
+8. **Auto-detect migration lanes**: From `codeloom_get_project_intel` response:
+   - Check `detected_lanes` array for lane matches (confidence > 0.3)
+   - Check `file_breakdown` for mainframe languages (cobol, pli, jcl → load mainframe lane)
+   - For each match, the lane sub-skill's transform tables, quality gates, and pitfalls
+     become active guidance for Steps 4-5
+   - Log which lanes were loaded and why
+
 ### Step 4 — Architecture Reasoning
 
 Analyze gathered data and produce a concise architecture document covering:
@@ -93,6 +105,42 @@ Propose MVP clusters based on:
 - Dependency order: independent MVPs first, orchestration/integration last
 - Priority ladder: `Foundation & Setup → Core Domain → Integrations → Orchestration → Tests`
 - **Tests are a dedicated final MVP** — all `*.test.ts`, `*.spec.ts`, `*.test.py`, `evals/` files belong here
+
+**Asset-Strategy-Aware Clustering** (when asset_strategies exist):
+
+1. For each language in asset_strategies:
+   - `no_change` → EXCLUDE entirely from all MVPs
+   - `keep_as_is` → synthetic "Keep As-Is" MVP (copy only)
+   - Active strategies → include in clustering normally
+
+2. For JCL with sub_type strategies:
+   - compile_link: no_change → SKIP entirely
+   - sort_merge: rewrite → "Batch Utilities" MVP (early priority, after Foundation)
+   - data_mgmt: rewrite → Group with sort_merge in "Batch Utilities" MVP
+   - application_run: convert → Group each run step with its program's MVP
+   - proc_invoke: convert → "Job Orchestration" MVP or with programs
+
+3. For COBOL with program_category metadata:
+   - batch_program → standard batch MVP clustering
+   - cics_online → "Online Services" MVP (REST API endpoints)
+   - ims_dli → group with ORM/database MVP
+   - batch_db2 → group with database integration MVP
+   - copybook → Foundation MVP (shared type definitions)
+
+4. Fallback (no asset_strategies): classify client-side using metadata from unit listing
+
+**JCL Transform Patterns** (when JCL files present):
+- sort_merge → Python streaming (heapq.merge, SORT FIELDS 1-based→0-based, INCLUDE/OMIT predicates) or shell sort
+- data_mgmt → Python streaming (REPRO=copy, IEBGENER=copy, IEFBR14=skip, GDG=versioned naming) or shell cp
+- application_run → Shell script (export DD vars, call migrated Python/Java module)
+- compile_link → SKIP (do not generate)
+- proc_invoke → Shell script calling resolved proc equivalent
+
+**Lane Quality Gates** (if lane sub-skill is active):
+- Run each quality gate from the lane's checklist against the generated output
+- Log pass/fail for each gate
+- Blocking gates prevent MVP completion (same as compile failure)
+- Advisory gates are logged but don't block
 
 For each MVP, produce a **functional spec** in this format:
 
@@ -306,6 +354,7 @@ Generate all output files for the MVP:
    - Architecture doc (from session or re-query `codeloom_get_project_intel`)
    - Functional spec from `SPEC.md`
    - Target stack conventions
+   - **Batch processing rules**: source programs often process 10K–100K+ records. Migrated code must use streaming/chunked I/O (generators, line-by-line readers, iterators) — never load entire datasets into memory. Indexed file access (VSAM) → SQLite or DB-backed storage. Preserve open→read→process→write→close sequential semantics.
    - **External API docs via chub**: before writing any file that calls an external service, run `chub get <provider>/<api> --lang <lang>` to fetch current docs. Use returned spec as the authoritative reference for request shapes, auth headers, and error codes. Run `chub search <term>` first if unsure of the exact ID.
    - Lane-specific transforms if applicable (@~/.claude/commands/migrate/lane-struts.md, etc.)
 
@@ -590,6 +639,12 @@ Accuracy: XX/100 → YY/100 after fixes  (N fixed, M manual — see MIGRATION_AC
 - **Requirement-understanding transforms**: read each source file fully, understand its role in the system, apply architectural transforms — not find-and-replace. Migrated code must reflect the target architecture.
 - **chub before external APIs**: any file calling an external service (auth, payments, AI, messaging, etc.) must be preceded by `chub get <provider>/<api> --lang <lang>` — never guess at request shapes or auth headers
 - **Preserve parity**: migrated code must maintain functional equivalence with source
+- **Batch processing parity**: source programs (especially COBOL, PL/I, mainframe) process large volumes (10K–100K+ records). Migrated code MUST preserve the same processing model:
+  - Use streaming/chunked/record-at-a-time I/O — never load entire files into memory
+  - Python: generators, `csv.reader` line-by-line, context managers, iterators
+  - For indexed files (VSAM KSDS/ESDS): use SQLite or DB-backed indexed storage, not in-memory dicts
+  - Batch logic (sort, merge, match) must handle production-scale volumes without memory explosion
+  - Preserve sequential file semantics: open → read record → process → write → close
 - **Code stays on disk only**: never pass code content to `codeloom_complete_transform`
 - **CodeLoom visibility**: call `codeloom_start_transform` before writing any files
 
@@ -606,9 +661,28 @@ Accuracy: XX/100 → YY/100 after fixes  (N fixed, M manual — see MIGRATION_AC
 ## Lane References
 
 When the source codebase uses a known migration lane, apply its transform rules and quality gates:
+- Mainframe (COBOL/PL1/JCL): @~/.claude/commands/migrate/lane-mainframe.md
 - Struts → Spring Boot: @~/.claude/commands/migrate/lane-struts.md
 - Stored Procedures → ORM: @~/.claude/commands/migrate/lane-storedproc.md
 - VB.NET → .NET Core: @~/.claude/commands/migrate/lane-vbnet.md
+
+## Lane Auto-Selection
+
+When `codeloom_get_project_intel` returns `detected_lanes`, auto-load matching sub-skills:
+
+| Lane ID / Source Language | Sub-Skill | Auto-Load When |
+|--------------------------|-----------|----------------|
+| `mainframe_to_modern` OR source in {cobol, pli, jcl} | lane-mainframe.md | COBOL/PL1/JCL files detected |
+| `struts_to_springboot` | lane-struts.md | Struts framework detected |
+| `storedproc_to_orm` OR source = sql (stored_procedure sub-type) | lane-storedproc.md | SQL stored procedures detected |
+| `vbnet_to_dotnetcore` OR source = vbnet | lane-vbnet.md | VB.NET files detected |
+
+**Selection algorithm** (Step 3 of init, Step 1 of run):
+1. Read `detected_lanes` from `codeloom_get_project_intel`
+2. Also check `file_breakdown` — if COBOL/PL1/JCL present, always load mainframe lane
+3. For each detected lane with confidence > 0.3, load the matching sub-skill
+4. Multiple lanes can be active simultaneously (e.g., mainframe + stored procs for COBOL+DB2)
+5. Log: "Lane sub-skills loaded: mainframe (COBOL/JCL), storedproc (DB2 SQL)"
 
 ## Error Handling
 
