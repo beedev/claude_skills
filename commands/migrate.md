@@ -38,9 +38,12 @@ in the CodeLoom migration dashboard.
 2. If exactly 1 project: auto-select, confirm with user.
 3. If >1 projects: use `AskUserQuestion` — pick project by number.
 
-### Step 2 — Migration Goal Prompts (`AskUserQuestion`)
+### Step 2 — Migration Brief (`AskUserQuestion`)
 
-Collect in a **single** multi-question call:
+Collect migration decisions and business context that tooling cannot auto-detect.
+This produces a `MIGRATION_BRIEF.md` in the output directory that feeds into architecture reasoning.
+
+**Phase 2a — Migration Decisions** (single multi-question call):
 
 ```
 Q1: What is your migration goal? (free text — what are you migrating to and why?)
@@ -50,6 +53,75 @@ Q3: Migration style
     Options: Strangler Fig (incremental, low risk) / Big Bang (full rewrite) / Hybrid
 Q4: Output directory
     Options: migration-output/<project_id>/ (Recommended) / Custom path / Other
+```
+
+**Phase 2b — Business Context** (AskUserQuestion):
+
+Ask the user ONE question:
+
+```
+Q5: How would you like to provide business context (dead code, volumes, integrations, known issues)?
+    Options:
+    - Here in CLI (I'll answer a few questions now)
+    - Web UI (I'll fill the form in the browser and run /migrate resume when done)
+    - Skip (no business context needed)
+```
+
+**If "Here in CLI"**: Ask Q6-Q11 in a single multi-question call:
+```
+Q6: Are there any dead/unused programs to skip entirely?
+    (free text — list program names or "none")
+Q7: Processing volumes — approximate daily record counts for key batch jobs?
+    (free text — e.g., "CBTRN01C: ~50K/day, 200K peak month-end" or "unknown")
+Q8: External integrations — what external systems connect via queues, files, or shared databases?
+    (free text — e.g., "MQ: ACCT.REQUEST.Q → Core Banking" or "none known")
+Q9: Known landmines — undocumented business rules, workarounds, or gotchas?
+    (free text or "none")
+Q10: Compliance requirements?
+    Options: PCI-DSS / SOX / GDPR / None / Other
+Q11: Target deployment platform?
+    Options: AWS (ECS/Lambda) / Kubernetes / Azure App Service / On-prem / Not decided
+```
+Then continue to Phase 2c (write MIGRATION_BRIEF.md) and Step 3.
+
+**If "Web UI"**:
+1. Save a draft plan to CodeLoom DB via `codeloom_save_plan` with `status=draft` (pass only project_id, target_brief, target_stack, output_dir — architecture_doc and discovery_doc can be omitted)
+2. Print: "Draft plan saved. Open the migration page in CodeLoom UI to fill in business context."
+3. Print: "When done, run `/migrate resume` to continue."
+4. **STOP** — do not continue to Step 3.
+
+**If "Skip"**: Continue to Phase 2c with empty brief (skip writing MIGRATION_BRIEF.md), then Step 3.
+
+**Phase 2c — Write `MIGRATION_BRIEF.md`**:
+
+**Skip this step entirely if no business context was provided (user chose "Skip").**
+
+After collecting CLI answers, write `<output_dir>/MIGRATION_BRIEF.md` containing all responses
+structured as sections. This file is read during Step 4 (Architecture Reasoning) and
+Step 6 (Transform) to provide human context that the codebase analysis cannot supply.
+
+```markdown
+# Migration Brief: <project_name>
+Generated: <date>
+
+## Migration Decisions
+- **Goal**: <Q1 answer>
+- **Target Stack**: <Q2 answer>
+- **Strategy**: <Q3 answer>
+
+## Business Context
+- **Dead Code / Skip List**: <Q6 answer>
+- **Processing Volumes**: <Q7 answer>
+- **Compliance**: <Q10 answer>
+
+## Integration Boundaries
+<Q8 answer — formatted as a table if structured>
+
+## Known Landmines
+<Q9 answer>
+
+## Target Environment
+- **Deployment**: <Q11 answer>
 ```
 
 ### Step 3 — Intelligence Gathering
@@ -85,13 +157,22 @@ After gathering, extract from `codeloom_get_import_graph` result:
 
 ### Step 4 — Architecture Reasoning
 
-Analyze gathered data and produce a concise architecture document covering:
+Read `<output_dir>/MIGRATION_BRIEF.md` (from Step 2c) and combine with intelligence gathered in Step 3.
+The brief provides human context (dead code, volumes, integrations, landmines) that auto-analysis cannot supply.
+
+Analyze gathered data + migration brief and produce a concise architecture document covering:
 
 - **Source summary**: Framework, patterns, key design choices identified
 - **Target architecture**: How the codebase maps to the target stack
 - **Key transforms**: Specific high-value mappings (e.g., "LangGraph nodes → Express routers")
 - **DI strategy**: How dependencies will be wired in the target
 - **Target file structure**: Unified `src/` layout — all MVPs write into the same tree, not separate directories
+- **Integration mapping**: For each external system from the brief (queues, files, DBs), specify
+  the target integration pattern (REST client, message broker adapter, file watcher, etc.)
+- **Dead code exclusions**: Programs listed in the brief's skip list are excluded from architecture and MVPs
+- **Volume-aware design**: Batch programs with high volumes (from the brief) must use streaming/chunked patterns
+- **Landmine annotations**: Known workarounds/gotchas from the brief are noted in the architecture doc
+  so transform steps preserve them intentionally
 - **Risks**: Anti-patterns to avoid, tricky patterns needing manual attention
 
 ### Step 5 — MVP Cluster Definition + Functional Specs
@@ -213,7 +294,8 @@ If "Adjust": apply changes and re-present. Ask again.
 
 ### Step 7 — Save to CodeLoom DB + Write Artifacts to Disk
 
-1. `codeloom_save_plan(project_id, target_brief, target_stack_json, architecture_doc, discovery_doc, output_dir)`
+1. `codeloom_save_plan(project_id, target_brief, target_stack_json, architecture_doc, discovery_doc, output_dir, migration_brief)`
+   - `migration_brief`: JSON string from Step 2b answers (dead_code, processing_volumes, integrations, landmines, compliance, deployment_platform). Omit if no business context was provided.
 2. `codeloom_save_mvps(plan_id, mvps[...])`
    - For each MVP: `{name, description, priority, source_file_paths, depends_on_names}`
 3. **Write `SPEC.md` per MVP** to `<output_dir>/<mvp-slug>/SPEC.md`
@@ -352,6 +434,7 @@ Generate all output files for the MVP:
    - Full source from Step 3
    - `SYMBOLS.md` for resolving all import renames from prior MVPs
    - Architecture doc (from session or re-query `codeloom_get_project_intel`)
+   - `MIGRATION_BRIEF.md` — human context: dead code exclusions, volumes, integration boundaries, known landmines
    - Functional spec from `SPEC.md`
    - Target stack conventions
    - **Batch processing rules**: source programs often process 10K–100K+ records. Migrated code must use streaming/chunked I/O (generators, line-by-line readers, iterators) — never load entire datasets into memory. Indexed file access (VSAM) → SQLite or DB-backed storage. Preserve open→read→process→write→close sequential semantics.
